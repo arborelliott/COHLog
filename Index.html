@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Combat Log Damage Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #EDF1F7;
+  --panel: #FFFFFF;
+  --ink: #1B2140;
+  --ink-soft: #4A5275;
+  --rule: #C9D1E3;
+  --hero: #2557D6;
+  --hero-ink: #FFFFFF;
+  --bolt: #FFC93C;
+  --alarm: #C8243A;
+  --shadow: #1B2140;
+  --field: #F7F9FC;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12162B;
+    --panel: #1B2140;
+    --ink: #E8ECF7;
+    --ink-soft: #A5AECB;
+    --rule: #343C63;
+    --hero: #5C86F0;
+    --hero-ink: #0E1226;
+    --bolt: #FFC93C;
+    --alarm: #FF6B7D;
+    --shadow: #05070F;
+    --field: #151A33;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12162B; --panel: #1B2140; --ink: #E8ECF7; --ink-soft: #A5AECB;
+  --rule: #343C63; --hero: #5C86F0; --hero-ink: #0E1226; --bolt: #FFC93C;
+  --alarm: #FF6B7D; --shadow: #05070F; --field: #151A33; color-scheme: dark;
+}
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+*, *::before, *::after { box-sizing: inherit; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1rem/1.55 "Barlow", "Segoe UI", system-ui, sans-serif;
+}
+main { max-width: 68rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+h1, h2 {
+  font-family: "Barlow Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  font-weight: 800;
+  line-height: 1.05;
+  margin: 0;
+}
+h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); letter-spacing: -0.01em; }
+h2 { font-size: 1.6rem; margin-bottom: 0.75rem; }
+.lede { max-width: 38rem; color: var(--ink-soft); margin: 0.6rem 0 1.75rem; }
+
+/* Panels: ink outline with hard offset shadow, like a comic panel */
+.panel {
+  background: var(--panel);
+  border: 2px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--shadow);
+  padding: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 12rem;
+  resize: vertical;
+  font: 0.85rem/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--ink);
+  background: var(--field);
+  border: 1.5px solid var(--rule);
+  padding: 0.75rem;
+}
+textarea.dragging { border-color: var(--hero); outline: 3px dashed var(--hero); outline-offset: -6px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: center; margin-top: 1rem; }
+button, .filebtn {
+  font: 600 1rem/1 "Barlow", sans-serif;
+  padding: 0.7rem 1.2rem;
+  border: 2px solid var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+button.primary {
+  background: var(--hero);
+  color: var(--hero-ink);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+button.primary:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--shadow); }
+button:focus-visible, .filebtn:focus-within, input:focus-visible, textarea:focus-visible, th:focus-visible {
+  outline: 3px solid var(--bolt); outline-offset: 2px;
+}
+.filebtn input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+label.gap { display: inline-flex; gap: 0.5rem; align-items: center; color: var(--ink-soft); }
+label.gap input {
+  width: 4.5rem; font: inherit; padding: 0.4rem; color: var(--ink);
+  background: var(--field); border: 1.5px solid var(--rule);
+}
+.hint { font-size: 0.9rem; color: var(--ink-soft); margin: 0.75rem 0 0; }
+.error { color: var(--alarm); font-weight: 600; margin: 0.75rem 0 0; }
+
+/* Headline numbers */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; }
+.stat { border-left: 6px solid var(--hero); padding: 0.25rem 0 0.25rem 0.85rem; }
+.stat.big { border-left-color: var(--bolt); }
+.stat .v {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-weight: 800; font-size: 2.3rem; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat .k { color: var(--ink-soft); font-size: 0.92rem; }
+.meta { color: var(--ink-soft); font-size: 0.9rem; margin: 1rem 0 0; }
+
+/* The memorable element: power bars */
+.bars { display: grid; gap: 0.55rem; }
+.bar-row { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr; gap: 0.75rem; align-items: center; }
+.bar-name { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.bar-track { position: relative; height: 2.1rem; }
+.bar {
+  position: absolute; inset: 0 auto 0 0;
+  background: var(--hero);
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow);
+  display: flex; overflow: hidden;
+  transform-origin: left;
+  animation: grow 0.6s cubic-bezier(.2,.8,.2,1) both;
+}
+.bar .bonus { background: var(--bolt); height: 100%; margin-left: auto; }
+.bar-label {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+  padding-left: 0.6rem;
+}
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .bar { animation: none; } }
+.legend { display: flex; gap: 1.25rem; flex-wrap: wrap; font-size: 0.9rem; color: var(--ink-soft); margin-top: 1rem; }
+.legend i { display: inline-block; width: 0.9rem; height: 0.9rem; border: 1.5px solid var(--ink); vertical-align: -0.1rem; margin-right: 0.35rem; }
+
+/* Tables */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 0.5rem 0.65rem; border-bottom: 1px solid var(--rule); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--ink-soft); cursor: pointer; user-select: none; }
+th[aria-sort="descending"]::after { content: " ▾"; }
+th[aria-sort="ascending"]::after { content: " ▴"; }
+tbody tr:hover { background: var(--field); }
+
+.two { display: grid; grid-template-columns: 1fr; gap: 1.75rem; }
+@media (min-width: 52rem) { .two { grid-template-columns: 1fr 2fr; } }
+.two .panel { margin-bottom: 0; }
+svg text { fill: var(--ink-soft); font: 12px "Barlow", sans-serif; }
+.notes { font-size: 0.92rem; color: var(--ink-soft); max-width: 46rem; }
+.notes li { margin-bottom: 0.3rem; }
+[hidden] { display: none !important; }
+@media (max-width: 34rem) {
+  .bar-row { grid-template-columns: 1fr; gap: 0.2rem; }
+  .bar-name { text-align: left; }
+}
+/* Character tabs */
+.tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem; }
+.tab {
+  font: 600 1.05rem/1 "Barlow", sans-serif;
+  padding: 0.65rem 1rem;
+  border: 2px solid var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+.tab[aria-selected="true"] { background: var(--bolt); color: #1B2140; }
+.tab small { font-weight: 500; opacity: 0.75; margin-left: 0.35rem; }
+.overview { color: var(--ink-soft); margin: -0.25rem 0 1.25rem; }
+.empty { color: var(--ink-soft); }
+.sessions { margin: 1rem 0 0; padding-left: 1.1rem; color: var(--ink-soft); font-size: 0.92rem; }
+.sessions li { margin-bottom: 0.2rem; }
+.tl-block + .tl-block { margin-top: 1.25rem; }
+.tl-title { font-weight: 600; margin: 0 0 0.35rem; }
+.grid2 { display: grid; grid-template-columns: 1fr; gap: 1.75rem; }
+@media (min-width: 52rem) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.grid2 .panel { margin-bottom: 0; }
+.panel h3 { font: 600 1.05rem/1.3 "Barlow", sans-serif; margin: 1.25rem 0 0.4rem; }
+.panel h3:first-of-type { margin-top: 0.25rem; }
+td.wrap { white-space: normal; text-align: left; min-width: 10rem; }
+details { margin-top: 0.75rem; }
+summary { cursor: pointer; font-weight: 600; }
+.drops { columns: 16rem; margin: 0.6rem 0 0; padding-left: 1.1rem; font-size: 0.92rem; }
+.section-gap { margin-top: 1.75rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Combat Log Analyzer</h1>
+  <p class="lede">Paste a City of Heroes chat log, or drop the .txt file in, to see what each of your characters did: damage and DPS by power, healing, endurance, control, buffs and debuffs, defeats and rewards, and how long you played. Everything runs in your browser; your log is never uploaded.</p>
+
+  <section class="panel" aria-labelledby="in-h">
+    <h2 id="in-h">Your log</h2>
+    <textarea id="log" spellcheck="false" placeholder="2026-10-21 19:08:33 Welcome to City of Heroes, Cinderone!&#10;2026-10-21 19:10:02 You hit Unbound Nictus with your Char for 6.33 points of Fire damage over time.&#10;…"></textarea>
+    <div class="controls">
+      <button class="primary" id="go">Analyze log</button>
+      <label class="filebtn">Open log file<input type="file" id="file" accept=".txt,.log,text/plain"></label>
+      <button id="sample">Try a sample</button>
+      <button id="clear">Clear</button>
+      <label class="gap">Idle gap <input type="number" id="gap" min="1" max="300" value="10"> seconds</label>
+    </div>
+    <p class="hint">Turn logging on in game with <code>/logchat</code>. Logs are saved under <code>Homecoming\accounts\&lt;account&gt;\Logs</code>. Each “Welcome to City of Heroes” line starts a new character session. Gaps between your actions longer than the idle gap count as downtime, not combat.</p>
+    <p class="error" id="err" role="alert" hidden></p>
+  </section>
+
+  <div id="results" hidden>
+    <p class="overview" id="overview"></p>
+    <div class="tabs" role="tablist" aria-label="Characters" id="tabs"></div>
+    <div id="panes"></div>
+
+    <section aria-labelledby="notes-h" class="section-gap">
+      <h2 id="notes-h">What’s counted</h2>
+      <ul class="notes">
+        <li>A character’s session runs from its “Welcome to City of Heroes” line until the next character logs in or the log ends. Several sessions for the same character are combined in one tab.</li>
+        <li>Combat time counts stretches where you were acting: damaging, healing, controlling, buffing or debuffing. Gaps longer than the idle gap are left out.</li>
+        <li>Only effects your log attributes to you are counted. Pet damage, such as Fire Imps, isn’t written to your log. Healing and buffs you receive from teammates aren’t counted as yours.</li>
+        <li>“Self healing” includes inspirations such as Respite and Awaken. “Endurance gained” comes from lines like “Your Take a Breather grants you…”; a few teammate powers are worded the same way in the log, so this figure can include some of theirs.</li>
+        <li>Control counts each time a hold, immobilize, stun, sleep or knockdown landed on a target. “Overpower” counts the extra magnitude applications from the Overpower effect.</li>
+        <li>Casts come from “You activated” lines; accuracy comes from HIT and MISSED roll lines.</li>
+      </ul>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const TS = "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}) ";
+  const R = s => new RegExp(TS + s);
+  const RE = {
+    ts:        new RegExp(TS),
+    welcome:   R("Welcome to City of Heroes, (.+?)!\\s*$"),
+    dmg:       R("You hit (.+?) with your (.+?) for ([0-9.]+) points of (.+?) damage( over time)?(?: \\(([A-Z ]+)\\))?\\.?\\s*$"),
+    endDrain:  R("You hit (.+?) with your (.+?) for ([0-9.]+) points of their endurance"),
+    endGrant:  R("You hit (.+?) with your (.+?) granting them ([0-9.]+) points of endurance"),
+    endSelf:   R("Your (.+?) grants you ([0-9.]+) points of endurance"),
+    heal:      R("You heal (.+?) with (.+?) for ([0-9.]+) health points"),
+    healSelf:  R("You are healed by your (.+?) for ([0-9.]+) health points"),
+    ctrl:      R("You ([A-Z][a-z]+) (.+?) with your (.+?)( \\(OVERPOWER\\))?\\.\\s*$"),
+    knock:     R("You knock (.+?) off their feet with your (.+?)!"),
+    dbSmoke:   R("You fill the area with (.+?), lowering (.+?) of (.+?)!\\s*$"),
+    dbReduce:  R("You reduced the (.+?) of (.+?) with your (.+?) to increase your own!"),
+    dbSlow:    R("Your (.+?) has slowed the (.+?) of (.+?) while increasing your own!"),
+    dbSiphon:  R("Your (.+?) siphons the (.+?) of (.+?)\\s*$"),
+    bfSpeed:   R("You (Speed Boost) (.+?), greatly increasing"),
+    bfProtect: R("You protect (.+?) from .+ with your (.+?) power"),
+    bfFulcrum: R("The (Fulcrum Shift) has increased the damage of your attacks!"),
+    bfYour:    R("Your (.+?) has increased your (.+?)\\.\\s*$"),
+    summon:    R("You call forth (.+?)!"),
+    act:       R("You activated the (.+?) power\\."),
+    hit:       R("HIT .+?! Your (.+?) power (?:had|was forced)"),
+    miss:      R("MISSED .+?!! Your (.+?) power had"),
+    defeat:    R("You have defeated (.+?)\\s*$"),
+    xp:        R("You gain ([\\d,]+) experience(?:, work off ([\\d,]+) debt)?(?:,? and (?:gain )?([\\d,]+) influence)?"),
+    drop:      R("You received (.+?)\\.\\s*$")
+  };
+  const UNKNOWN = "Unnamed character";
+  const toSec = s => Date.parse(s.replace(" ", "T")) / 1000;
+  const num = s => s ? parseFloat(s.replace(/,/g, "")) : 0;
+  const nf = (x, d = 1) => Number(x).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  const dur = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+    return (h ? h + "h " : "") + m + "m " + String(r).padStart(2, "0") + "s"; };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmtTime = sec => new Date(sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const fmtStamp = sec => new Date(sec * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const CTRL_WORDS = new Set(["Hold", "Immobilize", "Stun", "Sleep", "Confuse", "Terrorize", "Fear", "Placate", "Disorient", "Knockback", "Repel", "Taunt"]);
+  const CTRL_NAME = { Hold: "Hold", Immobilize: "Immobilize", Stun: "Stun", Sleep: "Sleep", Confuse: "Confuse", Terrorize: "Fear", Fear: "Fear",
+    Placate: "Placate", Disorient: "Stun", Knockback: "Knockback", Repel: "Repel", Taunt: "Taunt" };
+
+  // ---- Split the log into sessions, one per "Welcome to City of Heroes" line
+  function parseSessions(text) {
+    const sessions = [];
+    let cur = null, lastAct = null;
+    const start = (name, sec) => {
+      cur = { name, start: sec, end: sec, actions: [], dmg: [], heals: [], endur: [], ctrl: [], debuffs: [], buffs: [],
+              acts: {}, hits: {}, misses: {}, defeats: [], xp: 0, inf: 0, debt: 0, drops: [] };
+      sessions.push(cur); lastAct = null;
+    };
+    for (const line of text.split(/\r?\n/)) {
+      const t = RE.ts.exec(line);
+      if (!t) continue;
+      const sec = toSec(t[1]);
+      let m;
+      if ((m = RE.welcome.exec(line))) { start(m[2].trim(), sec); continue; }
+      if (!cur) start(UNKNOWN, sec);
+      cur.end = sec;
+      const acted = () => cur.actions.push(sec);
+
+      if ((m = RE.dmg.exec(line))) {
+        cur.dmg.push({ t: sec, power: m[3], amt: parseFloat(m[4]), type: m[5], dot: !!m[6], tag: m[7] || "BASE" }); acted();
+      } else if ((m = RE.endDrain.exec(line))) {
+        cur.endur.push({ kind: "Drained from enemies", power: m[3], target: m[2], amt: parseFloat(m[4]) }); acted();
+      } else if ((m = RE.endGrant.exec(line))) {
+        cur.endur.push({ kind: "Given to allies", power: m[3], target: m[2], amt: parseFloat(m[4]) }); acted();
+      } else if ((m = RE.endSelf.exec(line))) {
+        cur.endur.push({ kind: "Gained yourself", power: m[2], target: "You", amt: parseFloat(m[3]) });
+      } else if ((m = RE.heal.exec(line))) {
+        cur.heals.push({ t: sec, power: m[3], target: m[2], amt: parseFloat(m[4]), self: false }); acted();
+      } else if ((m = RE.healSelf.exec(line))) {
+        cur.heals.push({ t: sec, power: m[2], target: "You", amt: parseFloat(m[3]), self: true });
+      } else if ((m = RE.knock.exec(line))) {
+        cur.ctrl.push({ effect: "Knockdown", target: m[2], power: m[3], op: false }); acted();
+      } else if ((m = RE.ctrl.exec(line)) && CTRL_WORDS.has(m[2])) {
+        cur.ctrl.push({ effect: CTRL_NAME[m[2]], target: m[3], power: m[4], op: !!m[5] }); acted();
+      } else if ((m = RE.dbSmoke.exec(line))) {
+        cur.debuffs.push({ power: m[2], effect: "Lowers " + m[3], target: m[4] }); acted();
+      } else if ((m = RE.dbReduce.exec(line))) {
+        cur.debuffs.push({ power: m[4], effect: "Lowers " + m[2], target: m[3] }); acted();
+      } else if ((m = RE.dbSlow.exec(line))) {
+        cur.debuffs.push({ power: m[2], effect: "Slows " + m[3], target: m[4] }); acted();
+      } else if ((m = RE.dbSiphon.exec(line))) {
+        cur.debuffs.push({ power: m[2], effect: "Drains " + m[3], target: m[4] }); acted();
+      } else if ((m = RE.bfSpeed.exec(line))) {
+        cur.buffs.push({ power: m[2], target: m[3] }); acted();
+      } else if ((m = RE.bfProtect.exec(line))) {
+        cur.buffs.push({ power: m[3], target: m[2] }); acted();
+      } else if ((m = RE.bfFulcrum.exec(line))) {
+        cur.buffs.push({ power: m[2], target: "You (stack)" }); acted();
+      } else if ((m = RE.bfYour.exec(line))) {
+        cur.buffs.push({ power: m[2], target: "You" });
+      } else if ((m = RE.summon.exec(line))) {
+        cur.buffs.push({ power: lastAct || "Summon", target: m[2] + " (summoned)" }); acted();
+      } else if ((m = RE.act.exec(line))) {
+        cur.acts[m[2]] = (cur.acts[m[2]] || 0) + 1; lastAct = m[2];
+      } else if ((m = RE.hit.exec(line))) {
+        cur.hits[m[2]] = (cur.hits[m[2]] || 0) + 1;
+      } else if ((m = RE.miss.exec(line))) {
+        cur.misses[m[2]] = (cur.misses[m[2]] || 0) + 1;
+      } else if ((m = RE.defeat.exec(line))) {
+        cur.defeats.push(m[2]);
+      } else if ((m = RE.xp.exec(line))) {
+        cur.xp += num(m[2]); cur.debt += num(m[3]); cur.inf += num(m[4]);
+      } else if ((m = RE.drop.exec(line))) {
+        cur.drops.push(m[2]);
+      }
+    }
+    return sessions.filter(s => !(s.name === UNKNOWN && !s.actions.length && !s.defeats.length));
+  }
+
+  function activeSeconds(times, idleGap) {
+    if (!times.length) return 0;
+    const secs = [...new Set(times)].sort((a, b) => a - b);
+    let active = 1;
+    for (let i = 1; i < secs.length; i++) {
+      const g = secs[i] - secs[i - 1];
+      active += g <= idleGap ? g : 1;
+    }
+    return active;
+  }
+
+  // Group rows by key fields, summing amt and counting rows / unique targets
+  function group(list, keys) {
+    const map = new Map();
+    for (const r of list) {
+      const k = keys.map(f => r[f]).join("\u0000");
+      let g = map.get(k);
+      if (!g) { g = { count: 0, amt: 0, op: 0, targets: new Set() }; keys.forEach(f => g[f] = r[f]); map.set(k, g); }
+      g.count++; g.amt += r.amt || 0; if (r.op) g.op++; if (r.target) g.targets.add(r.target);
+    }
+    return [...map.values()].map(g => ({ ...g, targets: g.targets.size }));
+  }
+
+  // ---- Combine all sessions for one character into a summary
+  function summarize(name, sessions, idleGap) {
+    const add = (into, from) => { for (const k in from) into[k] = (into[k] || 0) + from[k]; };
+    const acts = {}, hits = {}, misses = {};
+    const all = { dmg: [], heals: [], endur: [], ctrl: [], debuffs: [], buffs: [], defeats: [], drops: [] };
+    let length = 0, active = 0, xp = 0, inf = 0, debt = 0;
+    const sessionInfo = sessions.map(s => {
+      add(acts, s.acts); add(hits, s.hits); add(misses, s.misses);
+      for (const k in all) all[k].push(...s[k]);
+      xp += s.xp; inf += s.inf; debt += s.debt;
+      const len = Math.max(0, s.end - s.start), act = activeSeconds(s.actions, idleGap);
+      length += len; active += act;
+      const total = s.dmg.reduce((a, d) => a + d.amt, 0);
+      let timeline = [];
+      if (s.dmg.length) {
+        const first = Math.min(...s.dmg.map(d => d.t)), last = Math.max(...s.dmg.map(d => d.t));
+        timeline = new Array(Math.floor((last - first) / 60) + 1).fill(0);
+        for (const d of s.dmg) timeline[Math.floor((d.t - first) / 60)] += d.amt / 60;
+      }
+      return { start: s.start, end: s.end, length: len, active: act, total, timeline };
+    });
+
+    const total = all.dmg.reduce((a, d) => a + d.amt, 0);
+    const powers = {};
+    for (const d of all.dmg) {
+      const p = powers[d.power] ||= { power: d.power, total: 0, ticks: 0, dot: 0, bonus: 0 };
+      p.total += d.amt; p.ticks++;
+      if (d.dot) p.dot += d.amt;
+      if (d.tag !== "BASE") p.bonus += d.amt;
+    }
+    const rows = Object.values(powers).map(p => {
+      const casts = acts[p.power] || 0, h = hits[p.power] || 0, ms = misses[p.power] || 0;
+      return { ...p, pct: 100 * p.total / total, avg: p.total / p.ticks, casts,
+        perCast: casts ? p.total / casts : null,
+        acc: h + ms ? 100 * h / (h + ms) : null,
+        dps: active ? p.total / active : 0 };
+    }).sort((a, b) => b.total - a.total);
+
+    const types = {};
+    for (const d of all.dmg) types[d.type] = (types[d.type] || 0) + d.amt;
+
+    const healOthers = all.heals.filter(h => !h.self).reduce((a, h) => a + h.amt, 0);
+    const healSelf = all.heals.filter(h => h.self).reduce((a, h) => a + h.amt, 0);
+    const defeatCounts = group(all.defeats.map(n => ({ target: n, name: n })), ["name"]).sort((a, b) => b.count - a.count);
+    const dropCounts = group(all.drops.map(n => ({ name: n })), ["name"]).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    return {
+      name, total, events: all.dmg.length, length, active, rows, types, sessions: sessionInfo,
+      healOthers, healSelf,
+      healByPower: group(all.heals, ["power", "self"]).sort((a, b) => b.amt - a.amt),
+      healByTarget: group(all.heals.filter(h => !h.self), ["target"]).sort((a, b) => b.amt - a.amt),
+      endurance: group(all.endur, ["kind", "power"]).sort((a, b) => a.kind.localeCompare(b.kind) || b.amt - a.amt),
+      ctrl: group(all.ctrl, ["power", "effect"]).sort((a, b) => b.count - a.count),
+      ctrlTotal: all.ctrl.length,
+      debuffs: group(all.debuffs, ["power", "effect"]).sort((a, b) => b.count - a.count),
+      buffs: group(all.buffs, ["power"]).sort((a, b) => b.count - a.count),
+      defeats: all.defeats.length, defeatCounts, xp, inf, debt, drops: dropCounts, dropTotal: all.drops.length
+    };
+  }
+
+  function analyze(text, idleGap) {
+    const byName = new Map();
+    for (const s of parseSessions(text)) {
+      if (!byName.has(s.name)) byName.set(s.name, []);
+      byName.get(s.name).push(s);
+    }
+    return [...byName].map(([name, list]) => summarize(name, list, idleGap));
+  }
+
+  // ---- Rendering
+  const COLS = [
+    ["power", "Power", v => esc(v)],
+    ["total", "Damage", v => nf(v, 0)],
+    ["pct", "Share", v => nf(v) + "%"],
+    ["dps", "DPS", v => nf(v, 2)],
+    ["ticks", "Ticks", v => nf(v, 0)],
+    ["avg", "Avg per tick", v => nf(v, 2)],
+    ["dot", "Over time", v => nf(v, 0)],
+    ["bonus", "Bonus", v => nf(v, 0)],
+    ["casts", "Casts", v => v ? nf(v, 0) : "–"],
+    ["perCast", "Per cast", v => v == null ? "–" : nf(v, 1)],
+    ["acc", "Accuracy", v => v == null ? "–" : nf(v) + "%"]
+  ];
+
+  function renderTable(table, rows, key, dir) {
+    const sorted = rows.slice().sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (typeof x === "string") return dir * x.localeCompare(y);
+      return dir * ((x ?? -Infinity) - (y ?? -Infinity));
+    });
+    table.innerHTML = `<thead><tr>${COLS.map(([k, label]) =>
+      `<th tabindex="0" data-k="${k}" ${k === key ? `aria-sort="${dir < 0 ? "descending" : "ascending"}"` : ""}>${label}</th>`).join("")}</tr></thead>
+      <tbody>${sorted.map(r => `<tr>${COLS.map(([k, , f]) => `<td>${f(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`;
+    table.querySelectorAll("th").forEach(th => {
+      const sortBy = () => {
+        const k = th.dataset.k;
+        renderTable(table, rows, k, k === key ? -dir : (k === "power" ? 1 : -1));
+        table.querySelector(`th[data-k="${k}"]`).focus();
+      };
+      th.addEventListener("click", sortBy);
+      th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sortBy(); } });
+    });
+  }
+
+  // Simple static table: cols = [[header, rowFn, wrap?], ...]
+  function simpleTable(rows, cols) {
+    if (!rows.length) return "";
+    return `<div class="scroll"><table><thead><tr>${cols.map(c => `<th style="cursor:default">${c[0]}</th>`).join("")}</tr></thead><tbody>${
+      rows.map(r => `<tr>${cols.map(c => `<td${c[2] ? ' class="wrap"' : ""}>${c[1](r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function timelineSVG(data, avg) {
+    const n = data.length;
+    const W = Math.max(480, n * 22), H = 200, padL = 44, padB = 26, padT = 10;
+    const maxV = Math.max(...data, 1);
+    const bw = (W - padL - 8) / n;
+    const y = v => padT + (H - padT - padB) * (1 - v / maxV);
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Damage per second for each minute of combat">`;
+    for (let g = 0; g <= 4; g++) {
+      const v = maxV * g / 4, yy = y(v);
+      s += `<line x1="${padL}" x2="${W - 8}" y1="${yy}" y2="${yy}" stroke="var(--rule)"/>` +
+           `<text x="${padL - 6}" y="${yy + 4}" text-anchor="end">${nf(v, 0)}</text>`;
+    }
+    data.forEach((v, i) => {
+      const x = padL + i * bw + 2, yy = y(v);
+      s += `<rect x="${x}" y="${yy}" width="${Math.max(1, bw - 4)}" height="${H - padB - yy}" fill="var(--hero)" stroke="var(--ink)" stroke-width="1"><title>Minute ${i + 1}: ${nf(v)} DPS</title></rect>`;
+      if (n <= 30 || i % Math.ceil(n / 15) === 0) s += `<text x="${x + bw / 2 - 2}" y="${H - 8}" text-anchor="middle">${i + 1}</text>`;
+    });
+    if (avg > 0 && avg <= maxV) s += `<line x1="${padL}" x2="${W - 8}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--bolt)" stroke-width="3" stroke-dasharray="7 5"><title>Combat average: ${nf(avg)} DPS</title></line>`;
+    return s + `</svg>`;
+  }
+
+  const stat = (v, k, big) => `<div class="stat${big ? " big" : ""}"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+
+  function renderPane(c, idx) {
+    const pane = document.createElement("section");
+    pane.id = "pane-" + idx;
+    pane.setAttribute("role", "tabpanel");
+    pane.setAttribute("aria-labelledby", "tab-" + idx);
+    pane.hidden = idx !== 0;
+
+    const dpsCombat = c.active ? c.total / c.active : 0;
+    const dpsSession = c.length ? c.total / c.length : 0;
+    const sessList = c.sessions.map((s, i) =>
+      `<li>${c.sessions.length > 1 ? `Session ${i + 1}: ` : ""}${esc(fmtStamp(s.start))} to ${esc(fmtTime(s.end))}, ${dur(s.length)} long, ${dur(s.active)} in combat, ${nf(s.total, 0)} damage</li>`).join("");
+
+    let html = `
+      <section class="panel">
+        <h2>${esc(c.name)}</h2>
+        <div class="stats">
+          ${stat(nf(c.total, 0), "Total damage", true)}
+          ${stat(nf(dpsCombat, 1), "DPS during combat", true)}
+          ${c.healOthers ? stat(nf(c.healOthers, 0), "Healing given to others", true) : ""}
+          ${stat(dur(c.length), "Session length")}
+          ${stat(dur(c.active), `Active combat time${c.length ? ` (${nf(100 * c.active / c.length, 0)}% of session)` : ""}`)}
+          ${stat(nf(dpsSession, 1), "DPS over whole session")}
+          ${stat(nf(c.defeats, 0), "Enemies you defeated")}
+          ${c.ctrlTotal ? stat(nf(c.ctrlTotal, 0), "Control effects landed") : ""}
+        </div>
+        <ul class="sessions">${sessList}</ul>
+      </section>`;
+
+    if (c.events) {
+      const max = c.rows[0].total;
+      const bars = c.rows.map((p, i) => {
+        const w = Math.max(0.5, 100 * p.total / max);
+        const bonusPct = p.total ? 100 * p.bonus / p.total : 0;
+        return `<div class="bar-row">
+          <div class="bar-name">${esc(p.power)}</div>
+          <div class="bar-track" title="${esc(p.power)}: ${nf(p.total)} damage (${nf(p.pct)}%)">
+            <div class="bar" style="width:${w}%;animation-delay:${Math.min(i, 12) * 40}ms"><span class="bonus" style="width:${bonusPct}%"></span></div>
+            <span class="bar-label" style="left:${w}%">${nf(p.total, 0)} · ${nf(p.pct)}%</span>
+          </div></div>`;
+      }).join("");
+      const types = Object.entries(c.types).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+        `<tr><td>${esc(k)}</td><td>${nf(v, 0)}</td><td>${nf(100 * v / c.total)}%</td></tr>`).join("");
+      const timelines = c.sessions.filter(s => s.timeline.length).map((s, i, arr) =>
+        `<div class="tl-block">${arr.length > 1 ? `<p class="tl-title">Session from ${esc(fmtStamp(s.start))}</p>` : ""}
+         <div class="scroll">${timelineSVG(s.timeline, s.active ? s.total / s.active : 0)}</div></div>`).join("");
+
+      html += `
+        <section class="panel">
+          <h2>Damage by power</h2>
+          <div class="bars">${bars}</div>
+          <div class="legend">
+            <span><i style="background:var(--hero)"></i>Base damage</span>
+            <span><i style="background:var(--bolt)"></i>Bonus damage (Containment, Arcane, and similar)</span>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Power details</h2>
+          <div class="scroll"><table class="power-table"></table></div>
+        </section>
+        <div class="two">
+          <section class="panel">
+            <h2>By damage type</h2>
+            <div class="scroll"><table><thead><tr><th style="cursor:default">Type</th><th style="cursor:default">Damage</th><th style="cursor:default">Share</th></tr></thead><tbody>${types}</tbody></table></div>
+          </section>
+          <section class="panel">
+            <h2>DPS over time</h2>
+            ${timelines}
+            <p class="hint">Bars show each minute from the first hit of a session. The dashed line is that session’s combat average.</p>
+          </section>
+        </div>`;
+    } else {
+      html += `<section class="panel"><p class="empty">No damage was logged for ${esc(c.name)}.</p></section>`;
+    }
+
+    // Healing and endurance
+    const support = [];
+    if (c.healByPower.length) {
+      support.push(`<h3>Healing by power</h3>` + simpleTable(c.healByPower, [
+        ["Power", r => esc(r.power)],
+        ["Who", r => r.self ? "Yourself" : "Others"],
+        ["Healed", r => nf(r.amt, 0)],
+        ["Heals", r => nf(r.count, 0)],
+        ["Targets", r => nf(r.targets, 0)]
+      ]));
+      if (c.healByTarget.length) support.push(`<h3>Healing by teammate</h3>` + simpleTable(c.healByTarget, [
+        ["Healed", r => esc(r.target), true], ["Amount", r => nf(r.amt, 0)], ["Heals", r => nf(r.count, 0)]
+      ]));
+    }
+    if (c.endurance.length) support.push(`<h3>Endurance</h3>` + simpleTable(c.endurance, [
+      ["Type", r => esc(r.kind), true], ["Power", r => esc(r.power)], ["Endurance", r => nf(r.amt, 1)], ["Times", r => nf(r.count, 0)]
+    ]));
+    if (c.buffs.length) support.push(`<h3>Buffs</h3>` + simpleTable(c.buffs, [
+      ["Power", r => esc(r.power)], ["Applications", r => nf(r.count, 0)], ["Targets", r => nf(r.targets, 0)]
+    ]));
+
+    const control = [];
+    if (c.ctrl.length) control.push(`<h3>Control</h3>` + simpleTable(c.ctrl, [
+      ["Power", r => esc(r.power)], ["Effect", r => esc(r.effect)], ["Landed", r => nf(r.count - r.op, 0)],
+      ["Overpower", r => r.op ? nf(r.op, 0) : "–"], ["Targets", r => nf(r.targets, 0)]
+    ]));
+    if (c.debuffs.length) control.push(`<h3>Debuffs</h3>` + simpleTable(c.debuffs, [
+      ["Power", r => esc(r.power)], ["Effect", r => esc(r.effect), true], ["Applications", r => nf(r.count, 0)], ["Targets", r => nf(r.targets, 0)]
+    ]));
+
+    if (support.length || control.length) {
+      html += `<div class="grid2 section-gap" style="margin-bottom:1.75rem">
+        <section class="panel"><h2>Healing, endurance and buffs</h2>${support.join("") || `<p class="empty">None logged.</p>`}</section>
+        <section class="panel"><h2>Control and debuffs</h2>${control.join("") || `<p class="empty">None logged.</p>`}</section>
+      </div>`;
+    }
+
+    // Defeats and rewards
+    html += `<section class="panel">
+      <h2>Defeats and rewards</h2>
+      <div class="stats">
+        ${stat(nf(c.defeats, 0), "Enemies you defeated")}
+        ${stat(nf(c.xp, 0), "Experience earned")}
+        ${stat(nf(c.inf, 0), "Influence earned")}
+        ${c.debt ? stat(nf(c.debt, 0), "Debt worked off") : ""}
+        ${stat(nf(c.dropTotal, 0), "Items received")}
+      </div>
+      ${c.defeatCounts.length ? `<details><summary>Enemies you defeated (${c.defeatCounts.length} kinds)</summary>${simpleTable(c.defeatCounts, [["Enemy", r => esc(r.name), true], ["Defeated", r => nf(r.count, 0)]])}</details>` : ""}
+      ${c.drops.length ? `<details><summary>Items received</summary><ul class="drops">${c.drops.map(d => `<li>${esc(d.name)}${d.count > 1 ? ` ×${d.count}` : ""}</li>`).join("")}</ul></details>` : ""}
+      <p class="hint">Experience and influence include your share of team defeats.</p>
+    </section>`;
+
+    pane.innerHTML = html;
+    const pt = pane.querySelector(".power-table");
+    if (pt) renderTable(pt, c.rows, "total", -1);
+    return pane;
+  }
+
+  function selectTab(idx, focus) {
+    document.querySelectorAll(".tab").forEach((t, i) => {
+      const on = i === idx;
+      t.setAttribute("aria-selected", on);
+      t.tabIndex = on ? 0 : -1;
+      if (on && focus) t.focus();
+    });
+    document.querySelectorAll("[role=tabpanel]").forEach((p, i) => { p.hidden = i !== idx; });
+  }
+
+  function render(chars) {
+    const tabs = $("tabs"), panes = $("panes");
+    tabs.innerHTML = ""; panes.innerHTML = "";
+    chars.forEach((c, i) => {
+      const b = document.createElement("button");
+      b.className = "tab"; b.id = "tab-" + i;
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-controls", "pane-" + i);
+      b.innerHTML = `${esc(c.name)}<small>${dur(c.length)}</small>`;
+      b.addEventListener("click", () => selectTab(i));
+      b.addEventListener("keydown", e => {
+        if (e.key === "ArrowRight") selectTab((i + 1) % chars.length, true);
+        if (e.key === "ArrowLeft") selectTab((i - 1 + chars.length) % chars.length, true);
+      });
+      tabs.appendChild(b);
+      panes.appendChild(renderPane(c, i));
+    });
+    selectTab(0);
+    const totalLen = chars.reduce((a, c) => a + c.length, 0);
+    const totalAct = chars.reduce((a, c) => a + c.active, 0);
+    $("overview").textContent = chars.length === 1
+      ? `1 character found.`
+      : `${chars.length} characters found. Across all of them: ${dur(totalLen)} logged, ${dur(totalAct)} in combat.`;
+    $("results").hidden = false;
+    $("results").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+
+  function run() {
+    const err = $("err"); err.hidden = true;
+    const text = $("log").value;
+    if (!text.trim()) { err.textContent = "Paste a log or open a log file first."; err.hidden = false; return; }
+    const gap = Math.max(1, parseInt($("gap").value, 10) || 10);
+    const chars = analyze(text, gap);
+    if (!chars.length) {
+      err.textContent = "Nothing you did was found. Paste the log exactly as saved, with lines starting like “2026-10-21 19:08:33”, and check that combat messages were being logged.";
+      err.hidden = false; $("results").hidden = true; return;
+    }
+    render(chars);
+  }
+
+  function loadFile(f) {
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => { $("log").value = rd.result; run(); };
+    rd.readAsText(f);
+  }
+
+  $("go").addEventListener("click", run);
+  $("clear").addEventListener("click", () => { $("log").value = ""; $("results").hidden = true; $("err").hidden = true; $("log").focus(); });
+  $("file").addEventListener("change", e => loadFile(e.target.files[0]));
+  const ta = $("log");
+  ta.addEventListener("dragover", e => { e.preventDefault(); ta.classList.add("dragging"); });
+  ta.addEventListener("dragleave", () => ta.classList.remove("dragging"));
+  ta.addEventListener("drop", e => { e.preventDefault(); ta.classList.remove("dragging"); loadFile(e.dataTransfer.files[0]); });
+
+  $("sample").addEventListener("click", () => {
+    $("log").value = [
+      "2026-10-21 19:08:33 Welcome to City of Heroes, Cinderone!",
+      "2026-10-21 19:10:00 You activated the Char power.",
+      "2026-10-21 19:10:02 HIT Unbound Nictus! Your Char power had a 70.91% chance to hit, you rolled a 33.69.",
+      "2026-10-21 19:10:02 You Hold Unbound Nictus with your Char.",
+      "2026-10-21 19:10:02 You hit Unbound Nictus with your Char for 6.33 points of Fire damage over time.",
+      "2026-10-21 19:10:02 You activated the Fire Cages power.",
+      "2026-10-21 19:10:03 HIT Unbound Nictus! Your Fire Cages power had a 53.18% chance to hit, you rolled a 7.13.",
+      "2026-10-21 19:10:03 MISSED Disciple!! Your Fire Cages power had a 52.15% chance to hit, you rolled a 68.73.",
+      "2026-10-21 19:10:03 You hit Unbound Nictus with your Fire Cages for 2.99 points of Fire damage over time.",
+      "2026-10-21 19:10:03 You Immobilize Unbound Nictus with your Fire Cages.",
+      "2026-10-21 19:10:03 You Immobilize Unbound Nictus with your Fire Cages (OVERPOWER).",
+      "2026-10-21 19:10:04 You hit Unbound Nictus with your Char for 6.33 points of Fire damage over time.",
+      "2026-10-21 19:10:05 You hit Unbound Nictus with your Fire Cages for 3.16 points of Fire damage over time (CONTAINMENT).",
+      "2026-10-21 19:10:06 You activated the Smoke power.",
+      "2026-10-21 19:10:06 You fill the area with Smoke, lowering the chance to hit and perception of Unbound Nictus!",
+      "2026-10-21 19:10:06 You fill the area with Smoke, lowering the chance to hit and perception of Disciple!",
+      "2026-10-21 19:10:08 You Speed Boost Sakurada, greatly increasing their movement rate, attack rate and endurance recovery!",
+      "2026-10-21 19:10:12 You activated the Arcane Bolt power.",
+      "2026-10-21 19:10:14 HIT Honored Brute! Your Arcane Bolt power had a 95.00% chance to hit, you rolled a 18.12.",
+      "2026-10-21 19:10:14 You hit Honored Brute with your Arcane Bolt for 97.27 points of Energy damage.",
+      "2026-10-21 19:10:14 You hit Honored Brute with your Arcane Bolt for 97.27 points of Energy damage (ARCANE).",
+      "2026-10-21 19:10:14 You knock Honored Brute off their feet with your Arcane Bolt!",
+      "2026-10-21 19:10:15 You have defeated Honored Brute",
+      "2026-10-21 19:10:15 You gain 21,228 experience and 3,774 influence.",
+      "2026-10-21 19:10:15 You received Nightmare Obol.",
+      "2026-10-21 19:10:16 You activated the Transfusion power.",
+      "2026-10-21 19:10:16 Your Transfusion siphons the endurance and regeneration rate of Unbound Nictus",
+      "2026-10-21 19:10:17 You hit Unbound Nictus with your Transfusion for 10.55 points of their endurance.",
+      "2026-10-21 19:10:17 You heal Sakurada with Transfusion for 207.51 health points.",
+      "2026-10-21 19:10:17 You heal Arile with Transfusion for 207.51 health points.",
+      "2026-10-21 19:10:20 You hit Sakurada with your Transference granting them 44 points of endurance.",
+      "2026-10-21 19:11:09 You hit Man O' War with your Fire Cages for 4.50 points of Fire damage over time.",
+      "2026-10-21 19:11:30 You take a Respite and gain some Hit points back.",
+      "2026-10-21 19:11:30 You are healed by your Respite for 254.34 health points.",
+      "2026-10-21 19:14:40 [Team] Cinderone: swapping alts, brb",
+      "2026-10-21 19:16:05 Welcome to City of Heroes, Sakurada!",
+      "2026-10-21 19:17:00 You activated the Shield Charge power.",
+      "2026-10-21 19:17:01 HIT Steel Strongman! Your Shield Charge power had a 95.00% chance to hit, you rolled a 28.73.",
+      "2026-10-21 19:17:01 You hit Steel Strongman with your Shield Charge for 412.60 points of Smashing damage.",
+      "2026-10-21 19:17:01 You knock Steel Strongman off their feet with your Shield Charge!",
+      "2026-10-21 19:17:06 You activated the Foot Stomp power.",
+      "2026-10-21 19:17:07 HIT Steel Strongman! Your Foot Stomp power had a 95.00% chance to hit, you rolled a 41.20.",
+      "2026-10-21 19:17:07 You hit Steel Strongman with your Foot Stomp for 288.15 points of Smashing damage.",
+      "2026-10-21 19:17:09 You hit Centurion with your Foot Stomp for 288.15 points of Smashing damage.",
+      "2026-10-21 19:17:09 You have defeated Steel Strongman",
+      "2026-10-21 19:17:09 You gain 11,115 experience and 1,853 influence.",
+      "2026-10-21 19:19:30 [Team] Sakurada: done here"
+    ].join("\n");
+    run();
+  });
+})();
+</script>
+</body>
+</html>
